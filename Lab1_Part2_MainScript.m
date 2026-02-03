@@ -1,5 +1,5 @@
 %{
-Author(s): Daniel Ghoreyshi, Graeme Appel
+Author(s): Abhishek Siwakoti
 Course: ASEN 3802 -- Structures Lab -- Task 2
 Goal: Complete Applications Regarding Beam Deflection and force analysis
 %}
@@ -9,7 +9,6 @@ Goal: Complete Applications Regarding Beam Deflection and force analysis
 clc
 clear
 close all
-
 
 %% Task 1, Part 1 -- Analysis of Experimental Data
 
