@@ -1,82 +1,108 @@
-%% Housekeeping
-clc
-clear
-close all
+%% ASEN 3802 Lab 1 (Part 2) — Task 2 ONLY (Case 2)
+clc; clear; close all;
 
-%% Task 2, Part 2 -- Determine Location of Off-Centered Load (Case 2)
-% Read in Case files for each case
-file1 = 'Case File Data/Case 1 - load in center';
-data_Case1 = load(file1);
+%% Load Case 2
+D2 = load('Case File Data/Case 2 data.txt');
 
-file2 = 'Case File Data/Case 2 data.txt';
-data_Case2 = load(file2);
+P_lbf   = D2(:,1);
+F0_lbf  = D2(:,2);
+F1_lbf  = D2(:,3);
+F2_lbf  = D2(:,4);
+F3D_lbf = D2(:,5);
+LVDT_in = D2(:,6);
 
-file3 = 'Case File Data/Case 3 data.txt';
-data_Case3 = load(file3);
+%% Constants + conversions
+L = 16*0.250;     % [m]
+E = 69e9;         % [Pa]
+I = 2.473e-6;     % [m^4]
+
+lbf2N = 4.4482216152605;
+m2in  = 39.370078740157;
+
+% Member properties for Fi prediction
+A_in2 = 0.0614;        % [in^2]
+d_in  = 4.921;         % [in]
+A = A_in2*(0.0254^2);  % [m^2]
+c = (d_in/2)*0.0254;   % [m]
+
+%% 1) Experimental load location from reactions
+RA_lbf = F0_lbf + F1_lbf;      % left support (per your assumption)
+RB_lbf = F2_lbf;               % right support
+
+% Use slope-through-origin for RA/P (more robust than full polyfit for ratios)
+sRA = (P_lbf' * RA_lbf) / (P_lbf' * P_lbf);    % ~ RA/P
+a_meas_m = L*(1 - sRA);                         % [m] (from left)
+
+% Snap to nearest node
+nodes_m = 0:0.25:L;
+[~, node_idx] = min(abs(nodes_m - a_meas_m));
+a_node_m = nodes_m(node_idx);
+
+%% 2) Experimental midspan deflection at P = 50 lbf (from LVDT fit)
+P_ref_lbf = 50;
+
+pV = polyfit(P_lbf, LVDT_in, 1);      % v = mP + b
+v_exp_50_in = polyval(pV, P_ref_lbf); % [in]
+
+%% 3) Theoretical midspan deflection at P = 50 lbf (equivalent beam)
+x = L/2;                 % midspan
+a = a_node_m;            % load location from left [m]
+b = L - a;
+
+P_ref_N = P_ref_lbf*lbf2N;
+
+if x <= a
+    v_mid_m = (P_ref_N*b*x)/(6*E*I*L) * (L^2 - b^2 - x^2);
+else
+    v_mid_m = (P_ref_N*a*(L-x))/(6*E*I*L) * (L^2 - a^2 - (L-x)^2);
+end
+
+v_th_50_in = v_mid_m*m2in;
+
+pct_err_v = abs(v_exp_50_in - v_th_50_in)/abs(v_th_50_in)*100;
+
+%% 4) Expected internal force Fi vs measured F3D (use slopes, preload-free)
+P_N = P_lbf*lbf2N;
+
+% Midspan moment for a single point load
+M_mid_Nm = 0.5 .* P_N .* min(a, b);     % [N*m]
+
+% Expected internal force
+Fi_expected_lbf = ((A*c/I) .* M_mid_Nm) / lbf2N;
+
+% Preload-correct F3D using intercept (or just compare slopes)
+pF = polyfit(P_lbf, F3D_lbf, 1);        % F3D = kP + b
+F3D_corrected_lbf = F3D_lbf - pF(2);
+
+% Compare slopes (single-number comparison)
+pFi = polyfit(P_lbf, Fi_expected_lbf, 1);
+pFc = polyfit(P_lbf, F3D_corrected_lbf, 1);
+
+%% OUTPUTS (Task 2 values only)
+fprintf('\n=== Task 2 (Case 2) Results ===\n');
+fprintf('a_measured = %.3f m (%.2f in)\n', a_meas_m, a_meas_m*m2in);
+fprintf('a_node     = %.3f m (%.2f in)  (Node %d)\n', a_node_m, a_node_m*m2in, node_idx-1);
+
+fprintf('\nMidspan deflection at P = 50 lbf:\n');
+fprintf('v_exp(50)  = %.4f in\n', v_exp_50_in);
+fprintf('v_th(50)   = %.4f in\n', v_th_50_in);
+fprintf('%% error    = %.1f %%\n', pct_err_v);
+
+fprintf('\nInternal force comparison (slope vs load):\n');
+fprintf('slope(Fi_expected / P) = %.4f [lbf/lbf]\n', pFi(1));
+fprintf('slope(F3D_corrected/P) = %.4f [lbf/lbf]\n', pFc(1));
+fprintf('ratio (meas/model)     = %.4f\n', pFc(1)/pFi(1));
+
+fprintf('\nF3D preload estimate (intercept): %.3f lbf\n', pF(2));
+
+% Small summary table at the reference load (50 lbf)
+Fi_exp_50 = polyval(pFi, P_ref_lbf);
+F3Dcorr_50 = polyval(pFc, P_ref_lbf);
 
 
-% Extract different columns of data
+pct_err_F3D = abs(Fi_exp_50 - F3Dcorr_50)/abs(F3Dcorr_50)*100;
 
-% Case 1
-data_Case1_Load = data_Case1(:,1); % Units [lbs]
-data_Case1_F0 = data_Case1(:,2); % Units [lbf]
-data_Case1_F1 = data_Case1(:,3); % Units [lbf]
-data_Case1_F2 = data_Case1(:,4); % Units [lbf]
-data_Case1_F3D = data_Case1(:,5); % Units [lbf]
-data_Case1_LVDT = data_Case1(:,6); % Units [in]
-
-% Case 2
-data_Case2_Load = data_Case2(:,1); % Units [lbs]
-data_Case2_F0 = data_Case2(:,2); % Units [lbf]
-data_Case2_F1 = data_Case2(:,3); % Units [lbf]
-data_Case2_F2 = data_Case2(:,4); % Units [lbf]
-data_Case2_F3D = data_Case2(:,5); % Units [lbf]
-data_Case2_LVDT = data_Case2(:,6); % Units [in]
-
-% Case 3
-data_Case3_Load = data_Case3(:,1); % Units [lbs]
-data_Case3_F0 = data_Case3(:,2); % Units [lbf]
-data_Case3_F1 = data_Case3(:,3); % Units [lbf]
-data_Case3_F2 = data_Case3(:,4); % Units [lbf]
-data_Case3_F3D = data_Case3(:,5); % Units [lbf]
-data_Case3_LVDT = data_Case3(:,6); % Units [in]
-
-% Constants (SI Units)
-L_total = 16 * 0.250;       % [m]
-E = 69e9;                   % [Pa]
-I = 2.473 * 10^-6;          % [m^4] 
-
-% 1. Determine location 'a' using Reaction Forces
-% Use polyfit to get the slope (RA/P)
-RA_Case2 = data_Case2_F0 + data_Case2_F1;
-coeff_RA = polyfit(data_Case2_Load, RA_Case2, 1);
-slope_RA_P = coeff_RA(1); 
-
-a_measured = L_total * (1 - slope_RA_P); 
-
-% 2. Identify the likely Node
-nodes = 0:0.25:L_total;
-[~, node_index] = min(abs(nodes - a_measured));
-a_predicted = nodes(node_index);
-
-fprintf('Measured load position: %.3f m\n', a_measured);
-fprintf('Likely node position: %.3f m (Node %d)\n', a_predicted, node_index-1);
-
-% 3. Compare Mid-span Deflection at P = 50 lbs
-P_ref = 50; % [lbs]
-
-% Experimental: use the LVDT slope from polyfit
-coeff_LVDT = polyfit(data_Case2_Load, data_Case2_LVDT, 1);
-v_exp_50 = coeff_LVDT(1) * P_ref; % Result in [inches]
-
-% Theoretical (using SI, then converting to inches)
-P_N = P_ref * 4.44822; % Convert lbs to Newtons
-b = L_total - a_predicted;
-x = L_total / 2;
-
-% Beam deflection formula for x < a (midspan is at L/2)
-v_theory_meters = (P_N * b * x) / (6 * E * I * L_total) * (L_total^2 - b^2 - x^2);
-v_theory_50 = v_theory_meters * 39.3701; % Convert m to inches
-
-fprintf('Experimental Mid-span Deflection: %.4f in\n', v_exp_50);
-fprintf('Theoretical Mid-span Deflection: %.4f in\n', v_theory_50);
+fprintf('\nAt P = 50 lbf:\n');
+fprintf('Fi_expected(50) ~ %.3f lbf\n', Fi_exp_50);
+fprintf('F3D_corrected(50) ~ %.3f lbf\n', F3Dcorr_50);
+fprintf('%% error    = %.1f %%\n', pct_err_F3D);

@@ -1,0 +1,89 @@
+%% ASEN 3802 Lab 1 (Part 2) — Task 2 (Case 2)
+clc; clear; close all;
+
+%% Load data
+D1 = load('Case File Data/Case 1 - load in center');
+D2 = load('Case File Data/Case 2 data.txt');
+D3 = load('Case File Data/Case 3 data.txt'); %#ok<NASGU>
+
+P2_lbf   = D2(:,1);
+F0_2_lbf = D2(:,2);
+F1_2_lbf = D2(:,3);
+F2_2_lbf = D2(:,4);
+F3D_lbf  = D2(:,5);
+LVDT_in  = D2(:,6);
+
+%% Constants + conversions
+L = 16*0.250;        % [m]
+E = 69e9;            % [Pa]
+I = 2.473e-6;        % [m^4]
+
+lbf2N = 4.4482216152605;
+m2in  = 39.370078740157;
+
+A_in2 = 0.0614;      % [in^2]
+d_in  = 4.921;       % [in]
+
+A = A_in2*(0.0254^2);     % [m^2]
+c = (d_in/2)*0.0254;      % [m]
+
+%% Load location from reactions
+RA_lbf = F0_2_lbf + F1_2_lbf;
+
+pRA = polyfit(P2_lbf, RA_lbf, 1);
+sRA = pRA(1);                   % ~ RA/P
+a_meas = L*(1 - sRA);           % [m] (a from left)
+
+nodes = 0:0.25:L;
+[~, idx] = min(abs(nodes - a_meas));
+a_node = nodes(idx);
+
+fprintf('Measured load position: %.3f m (%.2f in)\n', a_meas, a_meas*m2in);
+fprintf('Likely node position:   %.3f m (%.2f in) (Node %d)\n', a_node, a_node*m2in, idx-1);
+
+%% Midspan deflection comparison at P = 50 lbf
+P_ref_lbf = 50;
+
+pV = polyfit(P2_lbf, LVDT_in, 1);
+v_exp_50_in = polyval(pV, P_ref_lbf);
+
+P_ref_N = P_ref_lbf*lbf2N;
+x = L/2;
+a = a_node;
+b = L - a;
+
+if x <= a
+    v_mid_m = (P_ref_N*b*x)/(6*E*I*L) * (L^2 - b^2 - x^2);
+else
+    v_mid_m = (P_ref_N*a*(L-x))/(6*E*I*L) * (L^2 - a^2 - (L-x)^2);
+end
+
+v_th_50_in = v_mid_m*m2in;
+err_pct = abs(v_exp_50_in - v_th_50_in)/abs(v_th_50_in)*100;
+
+fprintf('Experimental Mid-span Deflection: %.4f in\n', v_exp_50_in);
+fprintf('Theoretical Mid-span Deflection:  %.4f in\n', v_th_50_in);
+fprintf('Percent Error: %.1f %%\n', err_pct);
+
+%% Expected internal force Fi (stress equivalence at midspan)
+P_all_N = P2_lbf*lbf2N;
+M_mid = 0.5 .* P_all_N .* min(a, b);      % [N*m]
+Fi_N = (A*c/I) .* M_mid;                  % [N]
+Fi_lbf = Fi_N/lbf2N;
+
+pF = polyfit(P2_lbf, F3D_lbf, 1);
+F3D_corr_lbf = F3D_lbf - pF(2);
+
+T = table(P2_lbf, Fi_lbf, F3D_lbf, F3D_corr_lbf, ...
+    'VariableNames', {'Applied_Load_lbf','Fi_expected_lbf','F3D_raw_lbf','F3D_corrected_lbf'});
+disp(T);
+
+figure;
+plot(P2_lbf, F3D_lbf, 'o'); hold on;
+plot(P2_lbf, Fi_lbf, '-', 'LineWidth', 1.5);
+plot(P2_lbf, F3D_corr_lbf, '--', 'LineWidth', 1.5);
+grid on;
+xlabel('Applied Load P [lbf]');
+ylabel('Force [lbf]');
+legend('F3D raw','Fi expected','F3D corrected','Location','best');
+title('Case 2: Expected Internal Force vs F3D');

@@ -1,0 +1,182 @@
+%% Task 3, Part 2 -- Determine Positions of Two Symmetric Masses (Case 3)
+
+%% Housekeeping
+clc
+clear
+close all
+
+% Read in Case files for each case
+file1 = 'Case File Data/Case 1 - load in center';
+data_Case1 = load(file1);
+
+file2 = 'Case File Data/Case 2 data.txt';
+data_Case2 = load(file2);
+
+file3 = 'Case File Data/Case 3 data.txt';
+data_Case3 = load(file3);
+
+
+% Case 1
+data_Case1_Load = data_Case1(:,1); % Units [lbf] 
+data_Case1_F0 = data_Case1(:,2); % Units [lbf]
+data_Case1_F1 = data_Case1(:,3); % Units [lbf]
+data_Case1_F2 = data_Case1(:,4); % Units [lbf]
+data_Case1_F3D = data_Case1(:,5); % Units [lbf]
+data_Case1_LVDT = data_Case1(:,6); % Units [in]
+
+% Case 2
+data_Case2_Load = data_Case2(:,1); % Units [lbf]
+data_Case2_F0 = data_Case2(:,2); % Units [lbf]
+data_Case2_F1 = data_Case2(:,3); % Units [lbf]
+data_Case2_F2 = data_Case2(:,4); % Units [lbf]
+data_Case2_F3D = data_Case2(:,5); % Units [lbf]
+data_Case2_LVDT = data_Case2(:,6); % Units [in]
+
+% Case 3
+data_Case3_Load = data_Case3(:,1); % Units [lbf]
+data_Case3_F0 = data_Case3(:,2); % Units [lbf]
+data_Case3_F1 = data_Case3(:,3); % Units [lbf]
+data_Case3_F2 = data_Case3(:,4); % Units [lbf]
+data_Case3_F3D = data_Case3(:,5); % Units [lbf]
+data_Case3_LVDT = data_Case3(:,6); % Units [in]
+
+% --- Reaction symmetry check ---
+RA3_lbf = data_Case3_F0 + data_Case3_F1;
+RB3_lbf = data_Case3_F2;
+P3_lbf  = data_Case3_Load;
+
+% Fit ratios (slope-through-origin is robust)
+sRA3 = (P3_lbf' * RA3_lbf) / (P3_lbf' * P3_lbf);   % ~ RA/P
+sRB3 = (P3_lbf' * RB3_lbf) / (P3_lbf' * P3_lbf);   % ~ RB/P
+
+
+
+% Constants (SI Units)
+L_total = 16 * 0.250;       % [m]
+E = 69e9;                   % [Pa]
+I = 2.473e-6;               % [m^4]
+
+% Unit conversions
+lbf2N = 4.4482216152605;     % [N/lbf]
+N2lbf = 1/lbf2N;             % [lbf/N]
+in2m  = 0.0254;              % [m/in]
+m2in  = 1/in2m;              % [in/m]
+
+% --- Member geometry for Fi prediction ---
+A_in2 = 0.0614;                 % [in^2]
+d_in  = 4.921;                  % [in]
+A_m2  = A_in2 * (0.0254^2);     % [m^2]
+c_m   = (d_in/2) * 0.0254;      % [m]  (distance from NA to longeron)
+
+% -------------------------
+% Convert measured data to SI for fitting
+% -------------------------
+P_lbf = data_Case3_Load;            % [lbf]
+P_N   = P_lbf * lbf2N;              % [N]
+v_in  = data_Case3_LVDT;            % [in]
+v_m   = v_in * in2m;                % [m]
+
+% Fit v = slope*P + intercept (in SI)
+c_v = polyfit(P_N, v_m, 1);
+s = abs(c_v(1));                    % |v|/P slope [m/N]
+
+% Solve for alpha in (0, L/2):  alpha*(3L^2 - 4alpha^2)/(48EI) = s
+f = @(alpha) alpha.*(3*L_total^2 - 4*alpha.^2)/(48*E*I) - s;
+alpha = fzero(f, L_total/4);        % initial guess mid of (0, L/2)
+
+%--- Expected internal force Fi for symmetric loads + compare to F3D ---
+% For symmetric loads: M(mid) = (P/2)*alpha, where alpha is the left load position from left support
+
+Mmid3_Nm = 0.5 .* P_N .* alpha;                  % [N*m]
+Fi3_expected_N   = (A_m2 * c_m / I) .* Mmid3_Nm; % [N]
+Fi3_expected_lbf = Fi3_expected_N * N2lbf;       % [lbf]
+
+% Preload/offset correction on F3D (Case 3)
+pF3 = polyfit(P_lbf, data_Case3_F3D, 1);         % F3D = kP + b
+F3D3_corr_lbf = data_Case3_F3D - pF3(2);
+
+fprintf('\n--- F3D preload estimate (Case 3) ---\n');
+fprintf('F3D intercept (preload) ≈ %.3f lbf\n', pF3(2));
+
+
+% Convert to positions
+a = (L_total/2) - alpha;            % [m] distance from center
+x1 = alpha;                         % [m] left load position from left support
+x2 = L_total - alpha;               % [m] right load position from left support
+
+fprintf('\nTask 3 results (positions):\n');
+fprintf('alpha = x1 = %.4f m  (%.2f in)\n', x1, x1*m2in);
+fprintf('a (from center) = %.4f m  (%.2f in)\n', a, a*m2in);
+fprintf('x1 = %.4f m (%.2f in), x2 = %.4f m (%.2f in)\n', x1, x1*m2in, x2, x2*m2in);
+
+% Snap to nearest node
+nodes = 0:0.25:L_total;
+[~, i1] = min(abs(nodes - x1));
+[~, i2] = min(abs(nodes - x2));
+x1_node = nodes(i1);
+x2_node = nodes(i2);
+
+fprintf('Nearest nodes: x1 ≈ %.3f m (%.2f in) (Node %d), x2 ≈ %.3f m (%.2f in) (Node %d)\n', ...
+    x1_node, x1_node*m2in, i1-1, x2_node, x2_node*m2in, i2-1);
+
+% -------------------------
+% Experimental fit (SI), then compute deflections
+% -------------------------
+pfit = polyfit(P_N, v_m, 1);
+m_exp = pfit(1);   % [m/N]
+b_exp = pfit(2);   % [m]
+
+v_exp_fit_m  = polyval(pfit, P_N);        % [m] predicted experimental deflection at each P
+v_exp_fit_in = v_exp_fit_m * m2in;        % [in]
+
+% -------------------------
+% Theoretical model using alpha (SI), then convert
+% -------------------------
+K = alpha*(3*L_total^2 - 4*alpha^2) / (48*E*I);   % [m/N]
+sign_defl = 1;                                   % keep your sign convention
+v_th_m  = sign_defl * (K * P_N);                 % [m]
+v_th_in = v_th_m * m2in;                         % [in]
+
+% -------------------------
+% Print fit equations in BOTH unit systems
+% -------------------------
+m_exp_in_per_lbf = m_exp * (m2in / lbf2N);        % (m/N)*(in/m)/(N/lbf) = in/lbf
+b_exp_in         = b_exp * m2in;                 % [in]
+K_in_per_lbf     = K     * (m2in / lbf2N);        % [in/lbf]
+
+
+% -------------------------
+% Print actual deflection values 
+% -------------------------
+P_ref_lbf = 60;                          
+P_ref_N   = P_ref_lbf * lbf2N;
+
+v_exp_50_in = polyval(pfit, P_ref_N) * m2in;      % [in]
+v_th_50_in  = (sign_defl*K*P_ref_N) * m2in;       % [in]
+
+fprintf("\n--- Deflection values at P = %.1f lbf ---\n", P_ref_lbf);
+fprintf("v_exp(%.1f lbf) = %.5f in\n", P_ref_lbf, v_exp_50_in);
+fprintf("v_th (%.1f lbf) = %.5f in\n", P_ref_lbf, v_th_50_in);
+
+percent_force_error = abs(v_exp_50_in - v_th_50_in) / abs(v_th_50_in) * 100;
+fprintf("Percent deflection error at %.1f lbf = %.2f %%\n", P_ref_lbf, percent_force_error);
+
+
+% ---  Inline force values at reference load (Case 3) ---
+
+P_ref_lbf = 60;                       % reference load
+P_ref_N   = P_ref_lbf * lbf2N;        % [N]
+
+% Expected inline force from beam theory
+Mmid_ref = 0.5 * P_ref_N * alpha;     % [N*m]  (symmetric loads)
+Fi_expected_ref_lbf = (A_m2 * c_m / I) * Mmid_ref * N2lbf;
+
+% Experimental inline force from F3D (preload-corrected)
+Fi_exp_ref_lbf = polyval(pF3, P_ref_lbf) - pF3(2);
+
+fprintf('\n--- Inline Force at P = %.1f lbf (Case 3) ---\n', P_ref_lbf);
+fprintf('Expected inline force (theory): %.3f lbf\n', Fi_expected_ref_lbf);
+fprintf('Experimental inline force (F3D): %.3f lbf\n', Fi_exp_ref_lbf);
+
+percent_force_error = abs(Fi_exp_ref_lbf - Fi_expected_ref_lbf) / abs(Fi_expected_ref_lbf) * 100;
+fprintf("Percent Force error at %.1f lbf = %.2f %%\n", P_ref_lbf, percent_force_error);
